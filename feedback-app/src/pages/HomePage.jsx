@@ -29,9 +29,13 @@ function HomePage() {
     setError(null)
     try {
       const data = await FeedbackService.getAllFeedback()
+
+      // Guard: ensure we always work with an array regardless of server shape
+      const list = Array.isArray(data) ? data : []
+
       // Sort newest first
-      const sorted = [...data].sort((a, b) =>
-        new Date(b.createdAt) - new Date(a.createdAt)
+      const sorted = [...list].sort(
+        (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
       )
       setEntries(sorted)
     } catch (err) {

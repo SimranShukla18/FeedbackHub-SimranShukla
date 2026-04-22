@@ -1,15 +1,20 @@
 /**
  * FeedbackService — handles all API communication with the backend.
  * Base URL reads from the Vite env variable; falls back to localhost:5000.
+ *
+ * Backend response envelope shape:
+ *   { success: boolean, message?: string, data?: any, count?: number }
  */
 
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 /**
  * Generic fetch wrapper with error handling.
- * @param {string} endpoint - API endpoint path
- * @param {RequestInit} options - Fetch options
- * @returns {Promise<any>} Parsed JSON response
+ * Unwraps the `data` field from the standard API response envelope.
+ *
+ * @param {string}      endpoint - API endpoint path (e.g. '/feedback')
+ * @param {RequestInit} options  - Fetch options
+ * @returns {Promise<any>}       Unwrapped value — `body.data` when present, else full body, else null
  */
 async function apiFetch(endpoint, options = {}) {
   const url = `${BASE_URL}${endpoint}`
@@ -20,22 +25,37 @@ async function apiFetch(endpoint, options = {}) {
 
   const response = await fetch(url, config)
 
-  if (!response.ok) {
-    // Try to parse backend error message
-    let errorMsg = `HTTP ${response.status}: ${response.statusText}`
-    try {
-      const errData = await response.json()
-      errorMsg = errData.message || errorMsg
-    } catch {
-      // ignore JSON parse failure
-    }
-    throw new Error(errorMsg)
-  }
-
-  // 204 No Content — return null
+  // 204 No Content (e.g. DELETE success) — nothing to parse
   if (response.status === 204) return null
 
-  return response.json()
+  // Parse JSON body for all other responses
+  let body = null
+  try {
+    body = await response.json()
+  } catch {
+    // Non-JSON body — treat as empty
+  }
+
+  // Handle HTTP errors: surface the backend's message if available
+  if (!response.ok) {
+    const message =
+      body?.message ||
+      (Array.isArray(body?.details)
+        ? body.details.map((e) => e.message).join(', ')
+        : null) ||
+      `HTTP ${response.status}: ${response.statusText}`
+    throw new Error(message)
+  }
+
+  // ── Unwrap the response envelope ──────────────────────────────────────────
+  // Backend sends: { success: true, count: N, data: [...] }  (GET /feedback)
+  //            or: { success: true, data: {...} }             (POST /feedback)
+  // We always want just the `data` field; fall back to full body if absent.
+  if (body !== null && typeof body === 'object' && 'data' in body) {
+    return body.data
+  }
+
+  return body
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
